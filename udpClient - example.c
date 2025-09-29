@@ -9,7 +9,7 @@
 
 #define SERVER "137.112.38.47"
 #define MESSAGE "hello"
-#define PORT 8836
+#define PORT 2526
 #define BUFSIZE 1024
 
 int main() {
