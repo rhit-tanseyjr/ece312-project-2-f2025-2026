@@ -138,9 +138,10 @@ put_u8(&w, VERSION);
 put_u16be(&w, SRC_PORT);
 put_u16be(&w, DSTPORT);
 
-uint16_t len_type = (uint16_t)(((TYPE & 0xF) << 12) | (payload_len & 0x0FFF));
+// uint16_t len_type = (uint16_t)(((TYPE & 0xF) << 12) | (payload_len & 0x0FFF));
+ uint16_t len_type = (uint16_t)(((payload_len & 0x0FFF) << 4 | (TYPE & 0x0F)));
 put_u16be(&w, len_type);
-
+  
 size_t bytes_before_checksum = (size_t)(w - out) + payload_len;
 
 bool need_buffer = (bytes_before_checksum % 2) != 0;
