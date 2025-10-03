@@ -11,7 +11,7 @@
 #include <ctype.h>
 
 #define SERVER "137.112.38.47"
-#define MESSAGE "hello"
+#define MESSAGE "hi"
 #define PORT 2526
 #define BUFSIZE 1024
 
@@ -144,13 +144,13 @@ put_u16be(&w, len_type);
 size_t bytes_before_checksum = (size_t)(w - out) + payload_len;
 
 bool need_buffer = (bytes_before_checksum % 2) != 0;
-if (need_buffer) {
-    put_u8(&w, 0x00);
-}
+
 
 memcpy(w, MESSAGE, payload_len);
 w += payload_len;
-
+if (need_buffer) {
+    put_u8(&w, 0x00);
+}
 put_u16be(&w, 0x0000);
 size_t total_len = (size_t)(w-out);
 uint16_t csum = internet_checksum(out, total_len);
