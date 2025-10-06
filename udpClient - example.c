@@ -11,7 +11,7 @@
 #include <ctype.h>
 
 #define SERVER "137.112.38.47"
-#define MESSAGE "hi"
+#define MESSAGE "hello"
 #define PORT 2526
 #define BUFSIZE 1024
 
@@ -31,11 +31,13 @@ static void put_u8(uint8_t **p, uint8_t v){
 static void put_u16be(uint8_t **p, uint16_t v){
     uint8_t* current = *p;
 
+    *current = (uint8_t)(v & 0xFF);
+    current = current + 1;
+
     *current = (uint8_t)(v>>8);
     current = current + 1;
 
-    *current = (uint8_t)(v & 0xFF);
-    current = current + 1;
+
 
     *p = current;
 }
@@ -66,8 +68,12 @@ static void byte_to_bits(uint8_t b, char out[9]){
     }
 }
 
-static void dump_packet(const uint8_t* buf, size_t len) {
-    printf("---- Sending packet (%zu bytes) ----\n", len);
+static void dump_packet(const uint8_t* buf, size_t len, bool header) {
+    if (header){
+        printf("---- Sending packet (%zu bytes) ----\n", len);        
+    } else {
+        printf("---- Receiving packet (%zu bytes) ----\n", len);  
+    }
     printf(" idx |  bits      | ascii \n");
     printf("--------------------------\n");
 
@@ -84,15 +90,26 @@ static void dump_packet(const uint8_t* buf, size_t len) {
 }
 
 
-static void dump_buffer_bits(const uint8_t* buf, size_t len){
-    printf(" idx | bits | ascii \n");
-    printf("----------------------------------------\n");
-    for (size_t i = 0; i < len; ++i) {
-        char bits[9]; byte_to_bits(buf[i], bits);
-        char ch = isprint(buf[i]) ? (char)buf[i] : '.';
-        printf("%4zu | %s | %c\n", i, bits, ch);
-    }
-    printf("--------------------------------------\n");
+
+static void print_message_recieved(const uint8_t* buffer, size_t nBytes) {
+    uint8_t version = buffer[0];
+    uint16_t srcPort = (buffer[2] << 8) | buffer[1];
+    uint16_t dstPort = (buffer[4] << 8) | buffer[3];
+    uint16_t len_type = (buffer[6] << 8) | buffer[5];
+
+    
+    uint16_t rhp_type = (len_type >> 12) & 0x0F;
+    uint16_t payload_len = len_type & 0x0FFF;
+
+    uint16_t checksum = (buffer[nBytes - 2] << 8) | buffer[nBytes - 1];
+
+    printf("Message Recieved: \n");
+    printf("    RHP version: %u\n", version);
+    printf("    RHP type: %u\n", rhp_type);
+    printf("    RHP src port: %u (0x%04X)\n", srcPort, srcPort);
+    printf("    RHP dst port: %u (0x%04X)\n", dstPort, dstPort);
+    printf("    RHP length: %u\n", payload_len);
+    printf("    Checksum: 0x%04X\n", checksum);
 }
 
 int main() {
@@ -138,8 +155,9 @@ put_u8(&w, VERSION);
 put_u16be(&w, SRC_PORT);
 put_u16be(&w, DSTPORT);
 
-// uint16_t len_type = (uint16_t)(((TYPE & 0xF) << 12) | (payload_len & 0x0FFF));
- uint16_t len_type = (uint16_t)(((payload_len & 0x0FFF) << 4 | (TYPE & 0x0F)));
+
+
+uint16_t len_type = (uint16_t)(((TYPE & 0x0F) << 4) | (payload_len & 0x000F) | (payload_len & 0x0FF0) << 8);
 put_u16be(&w, len_type);
   
 size_t bytes_before_checksum = (size_t)(w - out) + payload_len;
@@ -147,19 +165,23 @@ size_t bytes_before_checksum = (size_t)(w - out) + payload_len;
 bool need_buffer = (bytes_before_checksum % 2) != 0;
 
 
-memcpy(w, MESSAGE, payload_len);
-w += payload_len;
 if (need_buffer) {
     put_u8(&w, 0x00);
 }
+
+
+
+memcpy(w, MESSAGE, payload_len);
+w += payload_len;
+
+
 put_u16be(&w, 0x0000);
 size_t total_len = (size_t)(w-out);
 uint16_t csum = internet_checksum(out, total_len);
-out[total_len - 2] = (uint16_t)(csum >> 8);
+out[total_len - 2] = (uint8_t)(csum >> 8);
 out[total_len - 1] = (uint8_t)(csum & 0xFF);
 
-printf("Payload length: 0x%04X\n", payload_len);
-dump_packet(out, total_len);
+dump_packet(out, total_len, true);
 printf("Computed checksum: 0x%04X\n", csum);
 
 uint16_t verify = internet_checksum(out, total_len);
@@ -177,7 +199,10 @@ if (sendto(clientSocket, out, total_len, 0,
 nBytes = recvfrom(clientSocket, buffer, BUFSIZE, 0, NULL, NULL);
 
 printf("Received from server: %s\n", buffer);
-dump_buffer_bits(buffer, (size_t)nBytes);
+dump_packet(buffer, (size_t)nBytes, false);
+
+print_message_recieved(buffer, nBytes);
+
 
 close(clientSocket);
 return 0;
