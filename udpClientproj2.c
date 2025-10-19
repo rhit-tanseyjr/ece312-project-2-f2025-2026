@@ -95,6 +95,8 @@ static void byte_to_bits(uint8_t b, char out[9]){
     }
 }
 
+
+
 static void dump_packet(const uint8_t* buf, size_t len, bool header) {
     if (header){
         printf("---- Sending packet (%zu bytes) ----\n", len);        
@@ -197,16 +199,12 @@ static size_t build_rhp_with_rhmp(uint8_t *out,
     size_t rhmp_len = build_rhmp(&w, commID14, rhmp_type6, pl, pl_len);
 
     uint16_t rhp_payload_len = (uint16_t)rhmp_len;
-    // uint16_t len_type = (uint16_t)(((RHMP_TYPE & 0x0F) << 4) | (0b0100 & 0x000F) | (0b0100 & 0x0FF0) << 8);
-     uint16_t len_type = 0b0000010001000000;
+    uint16_t len_type = (uint16_t)(((rhp_payload_len & 0x0FF) << 8) | ((RHMP_TYPE & 0xF) <<4) | ((rhp_payload_len) & 0xF00) >> 4);
     len_type_at[1] = (uint8_t)(len_type & 0xFF);   
     len_type_at[0] = (uint8_t)(len_type >> 8);
 
 
     size_t bytes_before_checksum = (size_t)(w - out);
-    // if (bytes_before_checksum % 2) {
-    //     put_u8(&w, 0x00);
-    // }
 
     put_u16be(&w, 0x0000);
     size_t total_len = (size_t)(w-out);
@@ -221,17 +219,6 @@ static size_t build_rhp_with_rhmp(uint8_t *out,
     printf("Computed checksum: 0x%04X\n", verify);
 
     return total_len;
-
-    // uint8_t *chk = w;
-    // put_u16be(&w, 0x0000);
-
-
-    // size_t total_len = (size_t)(w - out);
-    // uint16_t csum = internet_checksum(out, total_len);
-    // chk[1] = (uint8_t)(csum & 0xFF);
-    // chk[0] = (uint8_t)(csum >> 8);
-
-    // return total_len;
 }
 
 
@@ -239,21 +226,16 @@ static size_t build_rhmp(uint8_t **w,
                          uint16_t commID14, uint8_t rhmp_type6,
                          const uint8_t *pl, uint16_t pl_len)
 {
-    // uint16_t w0 = (uint16_t)((commID14 & 0x3FFF) | ((rhmp_type6 & 0x03) << 14));
-    // uint16_t w0 = (uint16_t)(((commID14 << 10) & 0x3F00 ) | ((rhmp_type6 << 8) & 0x3) | (commID14 & 0x00FF));
-    // uint16_t w0 = 0b0000001100010010;
+
     uint8_t w0 = (uint16_t)((commID14 & 0xFF));
     uint8_t w1 = (uint16_t)(((rhmp_type6 & 0x3) << 6) | ((commID14 & 0x3F00) >> 8));
     uint8_t w2 = (uint16_t)(((pl_len & 0xF) << 4 ) | ((rhmp_type6 & 0x3C) >> 2));
     uint8_t w3 = (uint16_t)((pl_len & 0xFF0 >> 4));
 
 
-    // uint16_t w1 = (uint16_t)(((rhmp_type6 >> 2) & 0x0F) | ((pl_len & 0x0FFF) << 4));
-    // uint16_t w1 = (uint16_t) (((pl_len << 8) & 0xFF ) | ((rhmp_type6 << 4) & 0x3C ) | (pl_len) & 0x00F);
-    // uint16_t w1 = 0b0000000000000001;
-    put_u8(w, 0x00);
-    // put_u16be(w, w0);  
-    // put_u16be(w, w1);
+
+    put_u8(w, 0x00); //Buffer
+
     put_u8(w, w0);
     put_u8(w, w1);
     put_u8(w, w2);
