@@ -17,10 +17,11 @@
 
 #define VERSION 12
 #define DSTPORT 0x1874
-#define TYPE 4
+#define TYPE 0
 #define SRC_PORT 9438
 
 #define RHMP_COMM_ID 0x312
+#define RHMP_TYPE 4
 
 
 #define RHP_DSTPORT_RHMP 0x0ECE
@@ -57,12 +58,12 @@ static void put_u8(uint8_t **p, uint8_t v){
 static void put_u16be(uint8_t **p, uint16_t v){
     uint8_t* current = *p;
 
+    
     *current = (uint8_t)(v & 0xFF);
     current = current + 1;
 
     *current = (uint8_t)(v>>8);
     current = current + 1;
-
 
 
     *p = current;
@@ -146,6 +147,7 @@ static size_t build_rhp_control(uint8_t *out, const char *msg, uint16_t srcPort,
     put_u16be(&w, dstPort);
 
     uint16_t len_type = (uint16_t)(((type & 0x0F) << 4) | (payload_len & 0x000F) | (payload_len & 0x0FF0) << 8);
+   
     put_u16be(&w, len_type);
     
     size_t bytes_before_checksum = (size_t)(w - out) + payload_len;
@@ -195,9 +197,10 @@ static size_t build_rhp_with_rhmp(uint8_t *out,
     size_t rhmp_len = build_rhmp(&w, commID14, rhmp_type6, pl, pl_len);
 
     uint16_t rhp_payload_len = (uint16_t)rhmp_len;
-    uint16_t len_type = (uint16_t)(((4 & 0x0F) << 12) | (rhp_payload_len & 0x0FFF));
-    len_type_at[0] = (uint8_t)(len_type & 0xFF);   // low first (your writer style)
-    len_type_at[1] = (uint8_t)(len_type >> 8);
+    // uint16_t len_type = (uint16_t)(((RHMP_TYPE & 0x0F) << 4) | (0b0100 & 0x000F) | (0b0100 & 0x0FF0) << 8);
+     uint16_t len_type = 0b0000010001000000;
+    len_type_at[1] = (uint8_t)(len_type & 0xFF);   
+    len_type_at[0] = (uint8_t)(len_type >> 8);
 
 
     size_t bytes_before_checksum = (size_t)(w - out);
@@ -205,17 +208,30 @@ static size_t build_rhp_with_rhmp(uint8_t *out,
     //     put_u8(&w, 0x00);
     // }
 
-
-    uint8_t *chk = w;
     put_u16be(&w, 0x0000);
-
-
-    size_t total_len = (size_t)(w - out);
+    size_t total_len = (size_t)(w-out);
     uint16_t csum = internet_checksum(out, total_len);
-    chk[0] = (uint8_t)(csum & 0xFF);
-    chk[1] = (uint8_t)(csum >> 8);
+    out[total_len - 2] = (uint8_t)(csum >> 8);
+    out[total_len - 1] = (uint8_t)(csum & 0xFF);
+
+    //dump_packet(out, total_len, true);
+    printf("Computed checksum: 0x%04X\n", csum);
+
+    uint16_t verify = internet_checksum(out, total_len);
+    printf("Computed checksum: 0x%04X\n", verify);
 
     return total_len;
+
+    // uint8_t *chk = w;
+    // put_u16be(&w, 0x0000);
+
+
+    // size_t total_len = (size_t)(w - out);
+    // uint16_t csum = internet_checksum(out, total_len);
+    // chk[1] = (uint8_t)(csum & 0xFF);
+    // chk[0] = (uint8_t)(csum >> 8);
+
+    // return total_len;
 }
 
 
@@ -225,14 +241,23 @@ static size_t build_rhmp(uint8_t **w,
 {
     // uint16_t w0 = (uint16_t)((commID14 & 0x3FFF) | ((rhmp_type6 & 0x03) << 14));
     // uint16_t w0 = (uint16_t)(((commID14 << 10) & 0x3F00 ) | ((rhmp_type6 << 8) & 0x3) | (commID14 & 0x00FF));
-    uint16_t w0 = 0b000000010010;
+    // uint16_t w0 = 0b0000001100010010;
+    uint8_t w0 = (uint16_t)((commID14 & 0xFF));
+    uint8_t w1 = (uint16_t)(((rhmp_type6 & 0x3) << 6) | ((commID14 & 0x3F00) >> 8));
+    uint8_t w2 = (uint16_t)(((pl_len & 0xF) << 4 ) | ((rhmp_type6 & 0x3C) >> 2));
+    uint8_t w3 = (uint16_t)((pl_len & 0xFF0 >> 4));
+
 
     // uint16_t w1 = (uint16_t)(((rhmp_type6 >> 2) & 0x0F) | ((pl_len & 0x0FFF) << 4));
     // uint16_t w1 = (uint16_t) (((pl_len << 8) & 0xFF ) | ((rhmp_type6 << 4) & 0x3C ) | (pl_len) & 0x00F);
-    uint16_t w1 = 0b0000000000010000;
+    // uint16_t w1 = 0b0000000000000001;
     put_u8(w, 0x00);
-    put_u16be(w, w0);  
-    put_u16be(w, w1);
+    // put_u16be(w, w0);  
+    // put_u16be(w, w1);
+    put_u8(w, w0);
+    put_u8(w, w1);
+    put_u8(w, w2);
+    put_u8(w, w3);
 
     if (pl_len && pl) {
         memcpy(*w, pl, pl_len);
@@ -311,7 +336,7 @@ memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
 // out[total_len - 1] = (uint8_t)(csum & 0xFF);
 
 printf("Sending RHMP Message_Request…\n");
-size_t tx1 = build_rhp_with_rhmp(out, SRC_PORT, 4,
+size_t tx1 = build_rhp_with_rhmp(out, SRC_PORT, VERSION,
                                  RHMP_COMM_ID, RHMP_Message_Request,
                                  NULL, 0);
 dump_packet(out, tx1, true);
@@ -330,7 +355,28 @@ if (nBytes > 0) {
     print_message_recieved((const uint8_t*)buffer, (size_t)nBytes);
 }
 
-// size_t total_len = build_rhp_control(out, "hi", SRC_PORT, DSTPORT, VERSION, TYPE);
+// printf("Sending RHMP ID_Request…\n");
+// size_t tx2 = build_rhp_with_rhmp(out, SRC_PORT, VERSION,
+//                                  RHMP_COMM_ID, RHMP_ID_Request,
+//                                  NULL, 0);
+// dump_packet(out, tx2, true);
+
+// if (sendto(clientSocket, out, tx2, 0,
+//            (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+//     perror("sendto RHMP failed");
+//     return 0;
+// }
+
+// nBytes = recvfrom(clientSocket, buffer, BUFSIZE, 0, NULL, NULL);
+// if (nBytes > 0) {
+//     uint16_t chk = internet_checksum((const uint8_t*)buffer, (size_t)nBytes);
+//     printf("RHMP reply checksum %s\n", (chk == 0) ? "passed" : "FAILED");
+//     dump_packet((const uint8_t*)buffer, (size_t)nBytes, false);
+//     print_message_recieved((const uint8_t*)buffer, (size_t)nBytes);
+// }
+
+
+// size_t total_len = build_rhp_control(out, "hello", SRC_PORT, DSTPORT, VERSION, TYPE);
 // printf("Sending RHP message: %s\n", MESSAGE);
 // dump_packet(out, total_len, true);
 // /* send a message to the server */
@@ -341,9 +387,9 @@ if (nBytes > 0) {
 // }
 
 // /* Receive message from server */
-// // nBytes = recvfrom(clientSocket, buffer, BUFSIZE, 0, NULL, NULL);
-// // uint16_t received_checksum = (buffer[nBytes - 2] << 8) | buffer[nBytes -1];
-// // uint16_t computed_checksum = internet_checksum((uint8_t*)buffer, nBytes);
+// nBytes = recvfrom(clientSocket, buffer, BUFSIZE, 0, NULL, NULL);
+// uint16_t received_checksum = (buffer[nBytes - 2] << 8) | buffer[nBytes -1];
+// uint16_t computed_checksum = internet_checksum((uint8_t*)buffer, nBytes);
 
 // // if(computed_checksum == 0x0000){
 // //     printf("Checksum passed\n");
@@ -370,10 +416,10 @@ if (nBytes > 0) {
 
 // }
 
-//printf("Received from server: %s\n", buffer);
-//dump_packet(buffer, (size_t)nBytes, false);
+// printf("Received from server: %s\n", buffer);
+// dump_packet(buffer, (size_t)nBytes, false);
 
-//print_message_recieved(buffer, nBytes);
+// print_message_recieved(buffer, nBytes);
 
 
 close(clientSocket);

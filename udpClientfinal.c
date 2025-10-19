@@ -181,7 +181,7 @@ uint16_t csum = internet_checksum(out, total_len);
 out[total_len - 2] = (uint8_t)(csum >> 8);
 out[total_len - 1] = (uint8_t)(csum & 0xFF);
 
-//dump_packet(out, total_len, true);
+dump_packet(out, total_len, true);
 printf("Computed checksum: 0x%04X\n", csum);
 
 uint16_t verify = internet_checksum(out, total_len);
@@ -202,7 +202,7 @@ uint16_t computed_checksum = internet_checksum((uint8_t*)buffer, nBytes);
 
 if(computed_checksum == 0x0000){
     printf("Checksum passed\n");
-    //dump_packet((uint8_t*)buffer, (size_t)nBytes, false);
+    dump_packet((uint8_t*)buffer, (size_t)nBytes, false);
     print_message_recieved((uint8_t*)buffer, nBytes);
 } else {
     printf("Checksum failed |\n");
